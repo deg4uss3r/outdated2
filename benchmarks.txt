@@ -1,0 +1,23 @@
+
+Before Rayon:
+core on  rth/2537_replace_u64_for_acl_struct via ⬢ v14.5.0 via 🦀 v1.44.0 took 1m28s
+❯ time ~/code/outdated2/target/debug/outdated2
+Benchmark #1: /Users/rth/code/outdated2/target/debug/outdated2
+  Time (mean ± σ):     63.874 s ±  3.880 s    [User: 12.438 s, System: 1.226 s]
+  Range (min … max):   58.150 s … 71.439 s    10 runs
+
+After Rayon:
+core on  rth/2537_replace_u64_for_acl_struct via ⬢ v14.5.0 via 🦀 v1.44.0 took 14s
+❯ time ~/code/outdated2/target/debug/outdated2
+Benchmark #1: /Users/rth/code/outdated2/target/debug/outdated2
+  Time (mean ± σ):     12.383 s ±  2.835 s    [User: 11.949 s, System: 1.172 s]
+  Range (min … max):    9.887 s … 19.127 s    10 runs
+
+After Rayon on release mode: 
+core on  rth/2537_replace_u64_for_acl_struct via ⬢ v14.5.0 via 🦀 v1.44.0
+❯ time ~/code/outdated2/target/debug/outdated2
+Benchmark #1: /Users/rth/code/outdated2/target/debug/outdated2
+  Time (mean ± σ):     10.163 s ±  3.622 s    [User: 11.543 s, System: 1.045 s]
+  Range (min … max):    8.393 s … 20.398 s    10 runs
+
+
