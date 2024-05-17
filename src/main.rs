@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use cargo::core::source::SourceId;
-use cargo::core::Workspace;
-use cargo::util::config::Config;
-use cargo::util::important_paths::find_root_manifest_for_wd;
-use cargo::util::toml::read_manifest;
+use cargo::core::{Workspace, source::SourceId};
+use cargo::util::{config::Config, important_paths::find_root_manifest_for_wd, toml::read_manifest, OptVersionReq, VersionExt};
 
 use anyhow::{Context, Result};
 use curl::easy::Easy;
@@ -86,6 +85,9 @@ struct OutdatedDependency {
     latest_version: String,
 }
 
+unsafe impl Send for OutdatedDependency {}
+unsafe impl Sync for OutdatedDependency {}
+
 struct CrateOutdated {
     outdated: HashMap<String, Vec<OutdatedDependency>>,
 }
@@ -143,7 +145,11 @@ fn check_for_workspace_members(ws: cargo::core::Workspace) -> HashMap<String, Ha
         for dep in p.dependencies().iter() {
             let d = Dep {
                 name: dep.name_in_toml().to_string(),
-                version_req: dep.version_req().clone(),
+                version_req: match dep.version_req().clone() {
+                    OptVersionReq::Any => VersionReq::parse("*").expect("Failed Parsing * or any version required"),
+                    OptVersionReq::Locked(_, vr) => vr,
+                    OptVersionReq::Req(vr) => vr,
+                },
                 source_id: dep.source_id(),
             };
             this_deps.insert(d.to_owned());
@@ -248,7 +254,11 @@ fn create_cargo_manifest() -> Result<HashMap<String, HashSet<Dep>>> {
                 .into_iter()
                 .map(|f| Dep {
                     name: f.name_in_toml().to_string(),
-                    version_req: f.version_req().clone(),
+                    version_req:  match f.version_req().clone() {
+                        OptVersionReq::Any => VersionReq::parse("*").expect("Failed Parsing * or any version required"),
+                        OptVersionReq::Locked(_, vr) => vr,
+                        OptVersionReq::Req(vr) => vr,
+                    },
                     source_id: f.source_id(),
                 })
                 .collect();
@@ -265,6 +275,7 @@ fn create_cargo_manifest() -> Result<HashMap<String, HashSet<Dep>>> {
 fn main() -> Result<()> {
     let deps = create_cargo_manifest()?;
 
+    //let outdated = Arc::new(Mutex::new(CrateOutdated::new()));
     let mut outdated = CrateOutdated::new();
     let x: Vec<(String, OutdatedDependency)> = deps
         .par_iter()
@@ -298,16 +309,24 @@ fn main() -> Result<()> {
         .collect();
 
     for (crate_name, out_dep) in x.iter() {
+    
+    //x.par_iter().for_each(|(crate_name, out_dep)| {
+    //    let mut outdated_map = outdated
+    //    .lock()
+    //    .unwrap();
+        //let crate_map = outdated_map
         let crate_map = outdated
             .outdated
             .entry(crate_name.into())
             .or_insert(Vec::new());
         crate_map.push(out_dep.clone());
-    }
+    }//);
 
+    //if outdated.lock().unwrap().outdated.is_empty() {
     if outdated.outdated.is_empty() {
         println!("All dependencies are up-to-date!");
     } else {
+        //println!("{}", outdated.lock().unwrap());
         println!("{}", outdated);
     }
 
