@@ -5,8 +5,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use cargo::core::{Workspace, source::SourceId};
-use cargo::util::{config::Config, important_paths::find_root_manifest_for_wd, toml::read_manifest, OptVersionReq, VersionExt};
+use cargo::core::{SourceId, Workspace};
+use cargo::util::{
+    context::GlobalContext, important_paths::find_root_manifest_for_wd, toml::read_manifest,
+    OptVersionReq, VersionExt,
+};
 
 use anyhow::{Context, Result};
 use curl::easy::Easy;
@@ -146,8 +149,11 @@ fn check_for_workspace_members(ws: cargo::core::Workspace) -> HashMap<String, Ha
             let d = Dep {
                 name: dep.name_in_toml().to_string(),
                 version_req: match dep.version_req().clone() {
-                    OptVersionReq::Any => VersionReq::parse("*").expect("Failed Parsing * or any version required"),
+                    OptVersionReq::Any => {
+                        VersionReq::parse("*").expect("Failed Parsing * or any version required")
+                    }
                     OptVersionReq::Locked(_, vr) => vr,
+                    OptVersionReq::Precise(_, vr) => vr,
                     OptVersionReq::Req(vr) => vr,
                 },
                 source_id: dep.source_id(),
@@ -195,9 +201,10 @@ fn get_latest_from_repo(crate_name: String) -> Result<CratesIoResp> {
         if version.yanked {
             continue;
         } else {
-            if Version::parse(&version.num).context("Error parsing version")?.is_prerelease() {
-                
-            } 
+            if Version::parse(&version.num)
+                .context("Error parsing version")?
+                .is_prerelease()
+            {}
             latest = CratesIoResp {
                 crate_name: version.crate_name.clone(),
                 version: Version::parse(&version.num).context("Error parsing version")?,
@@ -209,7 +216,7 @@ fn get_latest_from_repo(crate_name: String) -> Result<CratesIoResp> {
 }
 
 fn create_cargo_manifest() -> Result<HashMap<String, HashSet<Dep>>> {
-    let mut config = match Config::default() {
+    let mut config = match GlobalContext::default() {
         Ok(cfg) => cfg,
         Err(e) => {
             let mut shell = cargo::core::Shell::new();
@@ -242,8 +249,8 @@ fn create_cargo_manifest() -> Result<HashMap<String, HashSet<Dep>>> {
         Workspace::new(&manifest_path, &config).context("Error creating new workspace")?;
     let source = SourceId::for_path(curr_workspace.root()).context("Error creating source")?;
     let manifest_cargo = Path::join(curr_workspace.root(), "Cargo.toml");
-    let t = read_manifest(&manifest_cargo, source, curr_workspace.config());
-    let maybe = t?.0;
+    let t = read_manifest(&manifest_cargo, source, curr_workspace.gctx());
+    let maybe = t.unwrap();
 
     Ok(match maybe {
         cargo::core::EitherManifest::Real(real_manifest) => {
@@ -254,10 +261,12 @@ fn create_cargo_manifest() -> Result<HashMap<String, HashSet<Dep>>> {
                 .into_iter()
                 .map(|f| Dep {
                     name: f.name_in_toml().to_string(),
-                    version_req:  match f.version_req().clone() {
-                        OptVersionReq::Any => VersionReq::parse("*").expect("Failed Parsing * or any version required"),
-                        OptVersionReq::Locked(_, vr) => vr,
-                        OptVersionReq::Req(vr) => vr,
+                    version_req: match f.version_req() {
+                        OptVersionReq::Any => VersionReq::parse("*")
+                            .expect("Failed Parsing * or any version required"),
+                        OptVersionReq::Locked(_, vr) => vr.to_owned(),
+                        OptVersionReq::Precise(_, vr) => vr.to_owned(),
+                        OptVersionReq::Req(vr) => vr.to_owned(),
                     },
                     source_id: f.source_id(),
                 })
@@ -309,18 +318,17 @@ fn main() -> Result<()> {
         .collect();
 
     for (crate_name, out_dep) in x.iter() {
-    
-    //x.par_iter().for_each(|(crate_name, out_dep)| {
-    //    let mut outdated_map = outdated
-    //    .lock()
-    //    .unwrap();
+        //x.par_iter().for_each(|(crate_name, out_dep)| {
+        //    let mut outdated_map = outdated
+        //    .lock()
+        //    .unwrap();
         //let crate_map = outdated_map
         let crate_map = outdated
             .outdated
             .entry(crate_name.into())
             .or_insert(Vec::new());
         crate_map.push(out_dep.clone());
-    }//);
+    } //);
 
     //if outdated.lock().unwrap().outdated.is_empty() {
     if outdated.outdated.is_empty() {
